@@ -17,6 +17,8 @@ import MobileLayout from "@/components/layout/MobileLayout";
 import AppHeader from "@/components/header/AppHeader";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "../contexts/AuthContext";
+import { handleLogout } from "../utils/auth-utils";
 
 const stats = [
   { icon: <Package className="w-5 h-5" />, label: "Total Sold", value: "156 Qtl" },
@@ -49,6 +51,12 @@ const menuItems = [
 ];
 
 const Profile = () => {
+  const { user } = useAuth();
+  
+  // Extract user details from Firebase user object
+  const userName = user?.displayName || user?.email?.split('@')[0] || "User";
+  const userEmail = user?.email || "Not provided";
+  
   return (
     <MobileLayout>
       <AppHeader title="Profile" />
@@ -62,21 +70,25 @@ const Profile = () => {
         >
           <div className="flex items-start gap-4">
             <div className="w-20 h-20 rounded-2xl bg-white/20 flex items-center justify-center text-4xl">
-              👨‍🌾
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="Profile" className="w-full h-full rounded-2xl object-cover" />
+              ) : (
+                <span>{userName.charAt(0)}</span>
+              )}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold">Ramesh Kumar</h2>
+                <h2 className="text-xl font-bold">{userName}</h2>
                 <BadgeCheck className="w-5 h-5 text-accent" />
               </div>
-              <p className="opacity-80 text-sm mt-1">Verified Farmer</p>
+              <p className="opacity-80 text-sm mt-1">Verified User</p>
               <div className="flex items-center gap-1 mt-2 text-sm opacity-80">
                 <MapPin className="w-4 h-4" />
-                <span>Village Rampur, Varanasi</span>
+                <span>{userEmail}</span>
               </div>
               <div className="flex items-center gap-1 mt-1 text-sm opacity-80">
                 <Phone className="w-4 h-4" />
-                <span>+91 98765 43210</span>
+                <span>{user?.phoneNumber || "Not provided"}</span>
               </div>
             </div>
           </div>
@@ -174,6 +186,7 @@ const Profile = () => {
           variant="outline"
           size="lg"
           className="w-full rounded-xl h-14 text-destructive border-destructive/30 hover:bg-destructive/10"
+          onClick={handleLogout}
         >
           <LogOut className="w-5 h-5 mr-2" />
           Log Out

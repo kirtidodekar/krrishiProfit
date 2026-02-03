@@ -1,10 +1,20 @@
-import { Home, Plus, ShoppingBag, BarChart3, User } from "lucide-react";
+import { Home, Plus, ShoppingBag, BarChart3, User, MessageCircle } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { useApp } from "@/contexts/AppContext";
 
-const navItems = [
-  { icon: Home, label: "Home", path: "/" },
+const farmerNavItems = [
+  { icon: Home, label: "Home", path: "/home" },
+  { icon: MessageCircle, label: "Chat", path: "/messages" },
+  { icon: Plus, label: "Add", path: "/add-waste", isCenter: true },
+  { icon: BarChart3, label: "Analytics", path: "/analytics" },
+  { icon: User, label: "Profile", path: "/profile" },
+];
+
+const buyerNavItems = [
+  { icon: Home, label: "Home", path: "/home" },
   { icon: ShoppingBag, label: "Market", path: "/marketplace" },
   { icon: Plus, label: "Add", path: "/add-waste", isCenter: true },
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
@@ -14,6 +24,16 @@ const navItems = [
 const BottomNavigation = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { orders } = useApp();
+
+  // Determine user role - in real app, this would come from user profile
+  const isFarmer = user?.email?.includes('farmer') || user?.displayName?.toLowerCase().includes('farmer') || true; // Default to farmer for now
+  
+  // Calculate unread messages for farmer
+  const unreadMessages = isFarmer ? 3 : 0; // Mock value - in real app, calculate from actual messages
+  
+  const navItems = isFarmer ? farmerNavItems : buyerNavItems;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-card border-t border-border shadow-lg z-50">
@@ -42,12 +62,20 @@ const BottomNavigation = () => {
               whileTap={{ scale: 0.9 }}
               onClick={() => navigate(item.path)}
               className={cn(
-                "flex flex-col items-center gap-1 p-2 rounded-xl transition-colors min-w-[60px]",
+                "flex flex-col items-center gap-1 p-2 rounded-xl transition-colors min-w-[60px] relative",
                 isActive ? "text-primary" : "text-muted-foreground"
               )}
             >
               <Icon className="w-6 h-6" />
               <span className="text-xs font-medium">{item.label}</span>
+              
+              {/* Unread message badge for Chat tab */}
+              {item.path === "/messages" && unreadMessages > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-xs font-bold flex items-center justify-center">
+                  {unreadMessages > 9 ? "9+" : unreadMessages}
+                </span>
+              )}
+              
               {isActive && (
                 <motion.div
                   layoutId="activeTab"

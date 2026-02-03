@@ -10,12 +10,19 @@ import {
   Mic,
   Tractor,
   Building2,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Loader2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import VoiceButton from "@/components/ui/voice-button";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const roles = [
   {
@@ -36,14 +43,22 @@ const roles = [
 
 const Signup = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { signUp } = useAuth();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
     phone: "",
     location: "",
     role: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [locationDetected, setLocationDetected] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const totalSteps = 4;
 
@@ -58,12 +73,38 @@ const Signup = () => {
     }, 1000);
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step < totalSteps) {
       setStep(step + 1);
     } else {
-      // Complete registration
-      navigate("/home");
+      // Complete registration with Firebase
+      setLoading(true);
+      try {
+        if (formData.password !== formData.confirmPassword) {
+          toast({
+            title: "Password Mismatch",
+            description: "Passwords do not match",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+        
+        await signUp(formData.email, formData.password);
+        toast({
+          title: "Account Created Successfully",
+          description: "Welcome to Krishi Profit!",
+        });
+        navigate("/home");
+      } catch (error: any) {
+        console.error(error);
+        toast({
+          title: "Registration Failed",
+          description: error.message || "An error occurred during registration",
+          variant: "destructive",
+        });
+      }
+      setLoading(false);
     }
   };
 
@@ -80,11 +121,11 @@ const Signup = () => {
       case 1:
         return formData.role !== "";
       case 2:
-        return formData.name.length >= 2;
+        return formData.name.length >= 2 && formData.email.includes('@') && formData.email.includes('.');
       case 3:
-        return formData.phone.length >= 10;
+        return formData.password.length >= 6 && formData.password === formData.confirmPassword;
       case 4:
-        return formData.location !== "";
+        return formData.phone.length >= 10 && formData.location !== "";
       default:
         return false;
     }
@@ -204,7 +245,7 @@ const Signup = () => {
               </motion.div>
             )}
 
-            {/* Step 2: Name */}
+            {/* Step 2: Name and Email */}
             {step === 2 && (
               <motion.div
                 key="step2"
@@ -214,45 +255,68 @@ const Signup = () => {
                 className="flex-1"
               >
                 <h2 className="text-xl font-bold text-foreground mb-2">
-                  What's your name?
+                  Your Details
                 </h2>
                 <p className="text-muted-foreground mb-6">
-                  Enter your full name as per records
+                  Enter your name and email to create an account
                 </p>
 
                 <div className="space-y-4">
-                  <div className="flex gap-2">
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                        <Input
+                          type="text"
+                          placeholder="Enter your name"
+                          value={formData.name}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              name: e.target.value,
+                            }))
+                          }
+                          className="pl-12 h-14 rounded-xl text-lg"
+                        />
+                      </div>
+                      <VoiceButton
+                        onVoiceInput={(text) =>
+                          setFormData((prev) => ({ ...prev, name: text }))
+                        }
+                      />
+                    </div>
+
+                    <p className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Mic className="w-4 h-4" />
+                      Tap mic to speak your name
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Email Address
+                    </label>
                     <div className="relative flex-1">
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                       <Input
-                        type="text"
-                        placeholder="Enter your name"
-                        value={formData.name}
+                        type="email"
+                        placeholder="Enter your email"
+                        value={formData.email}
                         onChange={(e) =>
                           setFormData((prev) => ({
                             ...prev,
-                            name: e.target.value,
+                            email: e.target.value,
                           }))
                         }
                         className="pl-12 h-14 rounded-xl text-lg"
                       />
                     </div>
-                    <VoiceButton
-                      onVoiceInput={(text) =>
-                        setFormData((prev) => ({ ...prev, name: text }))
-                      }
-                    />
                   </div>
-
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Mic className="w-4 h-4" />
-                    Tap mic to speak your name
-                  </p>
                 </div>
               </motion.div>
             )}
 
-            {/* Step 3: Phone */}
+            {/* Step 3: Password */}
             {step === 3 && (
               <motion.div
                 key="step3"
@@ -262,55 +326,85 @@ const Signup = () => {
                 className="flex-1"
               >
                 <h2 className="text-xl font-bold text-foreground mb-2">
-                  Your phone number
+                  Create Password
                 </h2>
                 <p className="text-muted-foreground mb-6">
-                  We'll send OTP to verify your number
+                  Secure your account with a strong password
                 </p>
 
                 <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <div className="h-14 px-4 bg-muted rounded-xl flex items-center">
-                      <span className="text-lg font-medium text-foreground">
-                        +91
-                      </span>
-                    </div>
-                    <div className="relative flex-1">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                       <Input
-                        type="tel"
-                        placeholder="Phone number"
-                        value={formData.phone}
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Create a password"
+                        value={formData.password}
                         onChange={(e) =>
                           setFormData((prev) => ({
                             ...prev,
-                            phone: e.target.value.slice(0, 10),
+                            password: e.target.value,
                           }))
                         }
-                        className="h-14 rounded-xl text-lg"
-                        maxLength={10}
+                        className="pl-12 pr-12 h-14 rounded-xl text-lg"
                       />
+                      <button
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-5 h-5 text-muted-foreground" />
+                        ) : (
+                          <Eye className="w-5 h-5 text-muted-foreground" />
+                        )}
+                      </button>
                     </div>
-                    <VoiceButton
-                      onVoiceInput={(text) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          phone: text.replace(/\D/g, "").slice(0, 10),
-                        }))
-                      }
-                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Confirm Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Re-enter password"
+                        value={formData.confirmPassword}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            confirmPassword: e.target.value,
+                          }))
+                        }
+                        className="pl-12 pr-12 h-14 rounded-xl text-lg"
+                      />
+                      <button
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="w-5 h-5 text-muted-foreground" />
+                        ) : (
+                          <Eye className="w-5 h-5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
                     <p className="text-sm text-foreground">
-                      📱 A 6-digit OTP will be sent to this number for
-                      verification
+                      🔐 Password must be at least 6 characters long
                     </p>
                   </div>
                 </div>
               </motion.div>
             )}
 
-            {/* Step 4: Location */}
+            {/* Step 4: Phone and Location */}
             {step === 4 && (
               <motion.div
                 key="step4"
@@ -320,77 +414,119 @@ const Signup = () => {
                 className="flex-1"
               >
                 <h2 className="text-xl font-bold text-foreground mb-2">
-                  Your location
+                  Contact & Location
                 </h2>
                 <p className="text-muted-foreground mb-6">
-                  Helps buyers find you easily
+                  Help buyers connect with you
                 </p>
 
                 <div className="space-y-4">
-                  <motion.button
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
-                    onClick={handleDetectLocation}
-                    className={cn(
-                      "w-full p-4 rounded-xl border-2 flex items-center gap-3 transition-all",
-                      locationDetected
-                        ? "border-success bg-success/5"
-                        : "border-primary border-dashed bg-primary/5"
-                    )}
-                  >
-                    <div
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Phone Number
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="h-14 px-4 bg-muted rounded-xl flex items-center">
+                        <span className="text-lg font-medium text-foreground">
+                          +91
+                        </span>
+                      </div>
+                      <div className="relative flex-1">
+                        <Input
+                          type="tel"
+                          placeholder="Phone number"
+                          value={formData.phone}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              phone: e.target.value.slice(0, 10),
+                            }))
+                          }
+                          className="h-14 rounded-xl text-lg"
+                          maxLength={10}
+                        />
+                      </div>
+                      <VoiceButton
+                        onVoiceInput={(text) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            phone: text.replace(/\D/g, "").slice(0, 10),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Your location
+                    </label>
+                    <motion.button
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={handleDetectLocation}
                       className={cn(
-                        "w-12 h-12 rounded-xl flex items-center justify-center",
-                        locationDetected ? "bg-success/20" : "bg-primary/10"
+                        "w-full p-4 rounded-xl border-2 flex items-center gap-3 transition-all",
+                        locationDetected
+                          ? "border-success bg-success/5"
+                          : "border-primary border-dashed bg-primary/5"
                       )}
                     >
-                      {locationDetected ? (
-                        <Check className="w-6 h-6 text-success" />
-                      ) : (
-                        <MapPin className="w-6 h-6 text-primary" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      {locationDetected ? (
-                        <>
-                          <p className="font-semibold text-success">
-                            Location Detected
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {formData.location}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-semibold text-primary">
-                            Auto-detect Location
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Tap to detect your farm location
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </motion.button>
+                      <div
+                        className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center",
+                          locationDetected ? "bg-success/20" : "bg-primary/10"
+                        )}
+                      >
+                        {locationDetected ? (
+                          <Check className="w-6 h-6 text-success" />
+                        ) : (
+                          <MapPin className="w-6 h-6 text-primary" />
+                        )}
+                      </div>
+                      <div className="flex-1 text-left">
+                        {locationDetected ? (
+                          <>
+                            <p className="font-semibold text-success">
+                              Location Detected
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {formData.location}
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-semibold text-primary">
+                              Auto-detect Location
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Tap to detect your farm location
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </motion.button>
 
-                  <div className="relative">
-                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                    <Input
-                      type="text"
-                      placeholder="Or enter manually"
-                      value={formData.location}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          location: e.target.value,
-                        }))
-                      }
-                      className="pl-12 h-14 rounded-xl"
-                    />
+                    <div className="relative">
+                      <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="Or enter manually"
+                        value={formData.location}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            location: e.target.value,
+                          }))
+                        }
+                        className="pl-12 h-14 rounded-xl"
+                      />
+                    </div>
                   </div>
                 </div>
               </motion.div>
             )}
+
           </AnimatePresence>
 
           {/* Continue Button */}
@@ -398,11 +534,20 @@ const Signup = () => {
             <Button
               size="lg"
               onClick={handleNext}
-              disabled={!isStepValid()}
+              disabled={!isStepValid() || loading}
               className="w-full h-14 rounded-xl text-lg font-bold bg-gradient-primary hover:opacity-90"
             >
-              {step === totalSteps ? "Create Account" : "Continue"}
-              <ChevronRight className="w-5 h-5 ml-2" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Creating Account...
+                </>
+              ) : (
+                <>
+                  {step === totalSteps ? "Create Account" : "Continue"}
+                  <ChevronRight className="w-5 h-5 ml-2" />
+                </>
+              )}
             </Button>
           </div>
         </motion.div>

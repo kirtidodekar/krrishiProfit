@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Package,
@@ -7,85 +7,41 @@ import {
   Clock,
   IndianRupee,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import MobileLayout from "@/components/layout/MobileLayout";
 import AppHeader from "@/components/header/AppHeader";
 import { cn } from "@/lib/utils";
+import { useApp } from "../contexts/AppContext";
+import { Order } from "../services/api";
 
 const tabs = ["Active", "Completed", "Payments"];
 
-const orders = [
-  {
-    id: "ORD001",
-    buyer: "BioFuel Energy Pvt Ltd",
-    wasteType: "Rice Straw",
-    quantity: "5 quintals",
-    amount: 12500,
-    status: "in-transit",
-    date: "Today, 10:30 AM",
-    statusLabel: "In Transit",
-  },
-  {
-    id: "ORD002",
-    buyer: "Green Earth Compost",
-    wasteType: "Vegetable Waste",
-    quantity: "3 quintals",
-    amount: 5400,
-    status: "pending",
-    date: "Yesterday",
-    statusLabel: "Pickup Pending",
-  },
-  {
-    id: "ORD003",
-    buyer: "Agri Recycle Solutions",
-    wasteType: "Wheat Stubble",
-    quantity: "8 quintals",
-    amount: 16800,
-    status: "completed",
-    date: "2 days ago",
-    statusLabel: "Delivered",
-  },
-  {
-    id: "ORD004",
-    buyer: "Farm Fresh Feeds",
-    wasteType: "Animal Waste",
-    quantity: "10 quintals",
-    amount: 15000,
-    status: "completed",
-    date: "5 days ago",
-    statusLabel: "Delivered",
-  },
-];
-
-const payments = [
-  {
-    id: "PAY001",
-    orderId: "ORD003",
-    amount: 16800,
-    status: "credited",
-    date: "2 days ago",
-    method: "Bank Transfer",
-  },
-  {
-    id: "PAY002",
-    orderId: "ORD004",
-    amount: 15000,
-    status: "credited",
-    date: "5 days ago",
-    method: "UPI",
-  },
-  {
-    id: "PAY003",
-    orderId: "ORD001",
-    amount: 12500,
-    status: "pending",
-    date: "Expected in 2 days",
-    method: "Bank Transfer",
-  },
-];
-
 const Orders = () => {
   const [activeTab, setActiveTab] = useState("Active");
+  const { orders, loading, error, refreshOrders } = useApp();
+  
+  // Calculate payment summary
+  const totalReceived = orders
+    .filter(o => o.status === 'delivered')
+    .reduce((sum, order) => sum + order.totalPrice, 0);
+  
+  const pendingAmount = orders
+    .filter(o => o.status === 'in-transit')
+    .reduce((sum, order) => sum + order.totalPrice, 0);
+  
+  // Filter orders based on active tab
+  const filteredOrders = orders.filter((order) => {
+    if (activeTab === "Active")
+      return order.status === "pending" || order.status === "in-transit";
+    if (activeTab === "Completed") return order.status === "delivered";
+    return false; // For payments tab, we handle separately
+  });
+  
+  // Payment-related orders
+  const paymentOrders = orders.filter(order => 
+    order.status === 'delivered' || order.status === 'in-transit'
+  );
 
   const statusConfig = {
     pending: {
@@ -98,24 +54,48 @@ const Orders = () => {
       color: "text-primary",
       bg: "bg-primary/10",
     },
-    completed: {
+    delivered: {
       icon: CheckCircle2,
       color: "text-success",
       bg: "bg-success/10",
     },
-    credited: {
-      icon: CheckCircle2,
-      color: "text-success",
-      bg: "bg-success/10",
+    cancelled: {
+      icon: Clock,
+      color: "text-destructive",
+      bg: "bg-destructive/10",
     },
   };
 
-  const filteredOrders = orders.filter((order) => {
-    if (activeTab === "Active")
-      return order.status === "pending" || order.status === "in-transit";
-    if (activeTab === "Completed") return order.status === "completed";
-    return false;
-  });
+  if (loading.orders) {
+    return (
+      <MobileLayout>
+        <AppHeader title="Orders & Payments" />
+        <div className="flex items-center justify-center min-h-[70vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  if (error.orders) {
+    return (
+      <MobileLayout>
+        <AppHeader title="Orders & Payments" />
+        <div className="px-4 py-4">
+          <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-center">
+            <p className="font-medium text-destructive">Error loading orders</p>
+            <p className="text-sm text-destructive/80 mt-1">{error.orders}</p>
+            <button 
+              onClick={refreshOrders}
+              className="mt-3 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
 
   return (
     <MobileLayout>
@@ -149,7 +129,7 @@ const Orders = () => {
               className="bg-gradient-success rounded-xl p-4 text-success-foreground"
             >
               <p className="text-sm opacity-80">Total Received</p>
-              <p className="text-2xl font-bold">₹31,800</p>
+              <p className="text-2xl font-bold">₹{totalReceived.toLocaleString()}</p>
               <p className="text-xs opacity-70 mt-1">Last 30 days</p>
             </motion.div>
             <motion.div
@@ -159,8 +139,8 @@ const Orders = () => {
               className="bg-gradient-accent rounded-xl p-4 text-accent-foreground"
             >
               <p className="text-sm opacity-80">Pending</p>
-              <p className="text-2xl font-bold">₹12,500</p>
-              <p className="text-xs opacity-70 mt-1">1 payment</p>
+              <p className="text-2xl font-bold">₹{pendingAmount.toLocaleString()}</p>
+              <p className="text-xs opacity-70 mt-1">{orders.filter(o => o.status === 'in-transit').length} payment(s)</p>
             </motion.div>
           </div>
         )}
@@ -172,6 +152,9 @@ const Orders = () => {
               filteredOrders.map((order, index) => {
                 const config = statusConfig[order.status as keyof typeof statusConfig];
                 const StatusIcon = config.icon;
+                
+                // Find the product to get the name
+                const product = { name: order.productName }; // In a real app, we'd fetch product details
 
                 return (
                   <motion.div
@@ -193,10 +176,10 @@ const Orders = () => {
                         </div>
                         <div>
                           <h4 className="font-semibold text-foreground">
-                            {order.wasteType}
+                            {product.name}
                           </h4>
                           <p className="text-sm text-muted-foreground">
-                            {order.quantity}
+                            {order.quantity} kg
                           </p>
                         </div>
                       </div>
@@ -208,7 +191,7 @@ const Orders = () => {
                         )}
                       >
                         <StatusIcon className="w-3 h-3" />
-                        {order.statusLabel}
+                        {order.status.charAt(0).toUpperCase() + order.status.slice(1).replace('-', ' ')}
                       </span>
                     </div>
 
@@ -216,13 +199,13 @@ const Orders = () => {
                       <div>
                         <p className="text-xs text-muted-foreground">Buyer</p>
                         <p className="text-sm font-medium text-foreground">
-                          {order.buyer}
+                          {order.buyerName}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-muted-foreground">{order.date}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(order.updatedAt).toLocaleDateString()}</p>
                         <p className="font-bold text-primary">
-                          ₹{order.amount.toLocaleString()}
+                          ₹{order.totalPrice.toLocaleString()}
                         </p>
                       </div>
                     </div>
@@ -246,13 +229,17 @@ const Orders = () => {
         {/* Payments List */}
         {activeTab === "Payments" && (
           <div className="space-y-3">
-            {payments.map((payment, index) => {
-              const config = statusConfig[payment.status as keyof typeof statusConfig];
+            {paymentOrders.map((order, index) => {
+              const config = statusConfig[order.status as keyof typeof statusConfig];
               const StatusIcon = config.icon;
-
+              
+              // Determine payment status based on order status
+              const paymentStatus = order.status === 'delivered' ? 'credited' : 'pending';
+              const paymentStatusLabel = order.status === 'delivered' ? 'Received' : 'Pending';
+              
               return (
                 <motion.div
-                  key={payment.id}
+                  key={order.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
@@ -261,31 +248,30 @@ const Orders = () => {
                   <div
                     className={cn(
                       "w-12 h-12 rounded-xl flex items-center justify-center",
-                      config.bg
+                      paymentStatus === 'credited' ? 'bg-success/10' : 'bg-warning/10'
                     )}
                   >
-                    <IndianRupee className={cn("w-6 h-6", config.color)} />
+                    <IndianRupee className={cn("w-6 h-6", paymentStatus === 'credited' ? 'text-success' : 'text-warning')} />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <h4 className="font-semibold text-foreground">
-                        ₹{payment.amount.toLocaleString()}
+                        ₹{order.totalPrice.toLocaleString()}
                       </h4>
                       <span
                         className={cn(
                           "px-2 py-0.5 rounded-full text-xs font-semibold",
-                          config.bg,
-                          config.color
+                          paymentStatus === 'credited' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
                         )}
                       >
-                        {payment.status === "credited" ? "Received" : "Pending"}
+                        {paymentStatusLabel}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {payment.method} • {payment.date}
+                      {order.status === 'delivered' ? 'Bank Transfer' : 'Expected payment'} • {new Date(order.updatedAt).toLocaleDateString()}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Order #{payment.orderId}
+                      Order #{order.id}
                     </p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-muted-foreground" />
