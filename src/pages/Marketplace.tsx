@@ -1,82 +1,51 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Search, SlidersHorizontal, MapPin, X } from "lucide-react";
+import { Search, SlidersHorizontal, MapPin, X, Wheat, Loader2 } from "lucide-react";
 import MobileLayout from "@/components/layout/MobileLayout";
 import AppHeader from "@/components/header/AppHeader";
 import BuyerCard from "@/components/ui/buyer-card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useApp } from "../contexts/AppContext";
+import { Product } from "../services/api";
 
-const filters = ["All", "Biofuel", "Compost", "Recycling", "Animal Feed"];
-
-const buyers = [
-  {
-    id: 1,
-    name: "BioFuel Energy Pvt Ltd",
-    industry: "Biofuel Production",
-    price: 2400,
-    unit: "quintal",
-    distance: 5,
-    demand: "high" as const,
-    rating: 4.8,
-  },
-  {
-    id: 2,
-    name: "Green Earth Compost",
-    industry: "Organic Compost Manufacturing",
-    price: 1800,
-    unit: "quintal",
-    distance: 8,
-    demand: "medium" as const,
-    rating: 4.5,
-  },
-  {
-    id: 3,
-    name: "Agri Recycle Solutions",
-    industry: "Agricultural Recycling",
-    price: 2100,
-    unit: "quintal",
-    distance: 12,
-    demand: "high" as const,
-    rating: 4.9,
-  },
-  {
-    id: 4,
-    name: "Farm Fresh Feeds",
-    industry: "Animal Feed Production",
-    price: 1500,
-    unit: "quintal",
-    distance: 3,
-    demand: "low" as const,
-    rating: 4.2,
-  },
-  {
-    id: 5,
-    name: "Eco Power Industries",
-    industry: "Biomass Power Generation",
-    price: 2800,
-    unit: "quintal",
-    distance: 18,
-    demand: "high" as const,
-    rating: 4.7,
-  },
-];
+const filters = ["All", "wheat-straw", "rice-husk", "corn-stover", "sugarcane-bagasse", "cotton-stalks", "other"];
 
 const Marketplace = () => {
   const [activeFilter, setActiveFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-
-  const filteredBuyers = buyers.filter((buyer) => {
-    const matchesSearch = buyer.name
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
+  const { products, loading, error, refreshProducts, searchProducts, getProductsByCategory } = useApp();
+  
+  // Filter products based on active filter and search query
+  const filteredProducts = products.filter((product) => {
+    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      product.location.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter =
       activeFilter === "All" ||
-      buyer.industry.toLowerCase().includes(activeFilter.toLowerCase());
+      product.category === activeFilter;
     return matchesSearch && matchesFilter;
   });
+  
+  // Handle filter changes
+  useEffect(() => {
+    if (activeFilter !== "All") {
+      getProductsByCategory(activeFilter as Product['category']).catch(console.error);
+    } else {
+      refreshProducts().catch(console.error);
+    }
+  }, [activeFilter]);
+  
+  // Handle search
+  useEffect(() => {
+    if (searchQuery) {
+      searchProducts(searchQuery).catch(console.error);
+    } else {
+      refreshProducts().catch(console.error);
+    }
+  }, [searchQuery]);
 
   return (
     <MobileLayout>
@@ -131,6 +100,27 @@ const Marketplace = () => {
           ))}
         </div>
 
+        {/* Loading State */}
+        {loading.products && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        )}
+
+        {/* Error State */}
+        {error.products && (
+          <div className="text-center py-12">
+            <p className="font-semibold text-destructive">Error loading products</p>
+            <p className="text-sm text-destructive/80 mt-1">{error.products}</p>
+            <Button 
+              onClick={refreshProducts}
+              className="mt-3"
+            >
+              Retry
+            </Button>
+          </div>
+        )}
+
         {/* Location Banner */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -140,10 +130,10 @@ const Marketplace = () => {
           <MapPin className="w-5 h-5 text-primary" />
           <div className="flex-1">
             <p className="text-sm font-medium text-foreground">
-              Showing buyers near Varanasi
+              Showing products near Varanasi
             </p>
             <p className="text-xs text-muted-foreground">
-              {filteredBuyers.length} buyers found within 20 km
+              {filteredProducts.length} products found
             </p>
           </div>
           <Button variant="ghost" size="sm" className="text-primary text-xs">
@@ -151,35 +141,60 @@ const Marketplace = () => {
           </Button>
         </motion.div>
 
-        {/* Buyers List */}
+        {/* Products List */}
         <div className="space-y-3">
-          {filteredBuyers.map((buyer, index) => (
+          {filteredProducts.map((product, index) => (
             <motion.div
-              key={buyer.id}
+              key={product.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
             >
-              <BuyerCard
-                name={buyer.name}
-                industry={buyer.industry}
-                price={buyer.price}
-                unit={buyer.unit}
-                distance={buyer.distance}
-                demand={buyer.demand}
-                rating={buyer.rating}
-                onContact={() => console.log("Contact", buyer.name)}
-              />
+              <div className="bg-card rounded-xl p-4 border border-border">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Wheat className="w-5 h-5 text-primary" />
+                      <h3 className="font-bold text-foreground">{product.name}</h3>
+                      {product.verified && (
+                        <span className="text-xs bg-success/20 text-success px-2 py-1 rounded-full">
+                          Verified
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{product.description}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-primary">₹{product.pricePerKg}/kg</p>
+                    <p className="text-xs text-muted-foreground">{product.quantity} {product.unit} available</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="w-3 h-3" />
+                    <span>{product.location}</span>
+                  </div>
+                  <div className="flex-1"></div>
+                  <Button 
+                    size="sm" 
+                    onClick={() => console.log('Contact farmer:', product.farmerName)}
+                    className="h-7 text-xs"
+                  >
+                    Contact
+                  </Button>
+                </div>
+              </div>
             </motion.div>
           ))}
         </div>
 
-        {filteredBuyers.length === 0 && (
+        {filteredProducts.length === 0 && !loading.products && (
           <div className="text-center py-12">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-muted-foreground" />
             </div>
-            <p className="font-semibold text-foreground">No buyers found</p>
+            <p className="font-semibold text-foreground">No products found</p>
             <p className="text-sm text-muted-foreground mt-1">
               Try adjusting your search or filters
             </p>

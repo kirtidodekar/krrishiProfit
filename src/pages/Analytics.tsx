@@ -6,6 +6,7 @@ import {
   PieChart,
   Lightbulb,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -19,45 +20,209 @@ import MobileLayout from "@/components/layout/MobileLayout";
 import AppHeader from "@/components/header/AppHeader";
 import StatCard from "@/components/ui/stat-card";
 import { cn } from "@/lib/utils";
-
-const earningsData = [
-  { month: "Jan", value: 12000 },
-  { month: "Feb", value: 18000 },
-  { month: "Mar", value: 15000 },
-  { month: "Apr", value: 25000 },
-  { month: "May", value: 32000 },
-  { month: "Jun", value: 28000 },
-];
-
-const wasteBreakdown = [
-  { type: "Crop Residue", percentage: 45, color: "bg-primary" },
-  { type: "Animal Waste", percentage: 30, color: "bg-secondary" },
-  { type: "Vegetable Waste", percentage: 15, color: "bg-accent" },
-  { type: "Fruit Waste", percentage: 10, color: "bg-success" },
-];
-
-const aiRecommendations = [
-  {
-    title: "Rice Straw Demand Up",
-    description: "Biofuel companies paying 20% more. Consider listing soon.",
-    trend: "+20%",
-    positive: true,
-  },
-  {
-    title: "New Buyer in Area",
-    description: "Eco Compost opened 10 km away. High demand for vegetable waste.",
-    trend: "New",
-    positive: true,
-  },
-  {
-    title: "Price Drop Alert",
-    description: "Wheat stubble prices down due to oversupply. Hold if possible.",
-    trend: "-12%",
-    positive: false,
-  },
-];
+import { useApp } from "../contexts/AppContext";
+import { Order, Product } from "../services/api";
+import { useEffect, useState } from "react";
 
 const Analytics = () => {
+  const { orders, products, loading, error, refreshOrders, refreshProducts } = useApp();
+  const [analyticsData, setAnalyticsData] = useState({
+    monthlyEarnings: [] as { month: string; value: number }[],
+    wasteBreakdown: [] as { type: string; percentage: number; color: string; count: number }[],
+    aiRecommendations: [] as {
+      title: string;
+      description: string;
+      trend: string;
+      positive: boolean;
+    }[],
+    summaryStats: {
+      thisMonthEarnings: 0,
+      totalSold: 0,
+      ordersCount: 0,
+      avgOrderValue: 0,
+    }
+  });
+  
+  useEffect(() => {
+    // Calculate analytics data
+    const calculateAnalytics = () => {
+      // Calculate monthly earnings from orders
+      const now = new Date();
+      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      
+      // Group orders by month for the last 6 months
+      const monthlyOrders = {};
+      orders.forEach(order => {
+        const orderDate = new Date(order.createdAt);
+        if (orderDate >= sixMonthsAgo) {
+          const monthKey = `${orderDate.getFullYear()}-${orderDate.getMonth()}`;
+          if (!monthlyOrders[monthKey]) {
+            monthlyOrders[monthKey] = 0;
+          }
+          monthlyOrders[monthKey] += order.totalPrice;
+        }
+      });
+      
+      // Create array of last 6 months
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthKey = `${monthDate.getFullYear()}-${monthDate.getMonth()}`;
+        const monthName = monthDate.toLocaleString('default', { month: 'short' });
+        months.push({
+          month: monthName,
+          value: monthlyOrders[monthKey] || 0
+        });
+      }
+      
+      // Calculate waste breakdown from products
+      const categoryCounts: Record<string, number> = {};
+      products.forEach(product => {
+        if (categoryCounts[product.category]) {
+          categoryCounts[product.category]++;
+        } else {
+          categoryCounts[product.category] = 1;
+        }
+      });
+      
+      const totalProducts = products.length;
+      const wasteBreakdown = Object.entries(categoryCounts).map(([category, count]) => {
+        const percentage = totalProducts > 0 ? Math.round((count / totalProducts) * 100) : 0;
+        
+        // Map categories to display names and colors
+        const categoryDisplayNames: Record<string, string> = {
+          'wheat-straw': 'Wheat Straw',
+          'rice-husk': 'Rice Husk',
+          'corn-stover': 'Corn Stover',
+          'sugarcane-bagasse': 'Sugarcane Bagasse',
+          'cotton-stalks': 'Cotton Stalks',
+          'other': 'Other Waste',
+        };
+        
+        const displayName = categoryDisplayNames[category] || category;
+        
+        const colorMap: Record<string, string> = {
+          'wheat-straw': 'bg-primary',
+          'rice-husk': 'bg-secondary',
+          'corn-stover': 'bg-accent',
+          'sugarcane-bagasse': 'bg-success',
+          'cotton-stalks': 'bg-warning',
+          'other': 'bg-muted',
+        };
+        
+        return {
+          type: displayName,
+          percentage,
+          color: colorMap[category] || 'bg-muted',
+          count
+        };
+      });
+      
+      // Calculate summary stats
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      const thisMonthOrders = orders.filter(order => {
+        const orderDate = new Date(order.createdAt);
+        return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear;
+      });
+      
+      const thisMonthEarnings = thisMonthOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+      
+      const totalSold = orders.reduce((sum, order) => sum + order.quantity, 0);
+      const avgOrderValue = thisMonthOrders.length > 0 
+        ? thisMonthOrders.reduce((sum, order) => sum + order.totalPrice, 0) / thisMonthOrders.length
+        : 0;
+      
+      // Generate AI recommendations based on data
+      const recommendations = [];
+      
+      // Check if there are any pending orders
+      const pendingOrders = orders.filter(o => o.status === 'pending');
+      if (pendingOrders.length > 0) {
+        recommendations.push({
+          title: "Action Required",
+          description: `You have ${pendingOrders.length} pending order(s) to review.`,
+          trend: "New",
+          positive: true,
+        });
+      }
+      
+      // Check for high-demand categories
+      const highDemandCategories = Object.entries(categoryCounts)
+        .filter(([_, count]) => count > 2) // Categories with more than 2 products
+        .map(([category, _]) => category);
+      
+      if (highDemandCategories.length > 0) {
+        recommendations.push({
+          title: `${highDemandCategories[0]} Demand High`,
+          description: `More buyers are looking for ${highDemandCategories[0]}. Consider listing more.`,
+          trend: "+15%",
+          positive: true,
+        });
+      }
+      
+      // Check for price trends
+      const avgPricePerKg = products.length > 0 
+        ? products.reduce((sum, product) => sum + product.pricePerKg, 0) / products.length
+        : 0;
+      
+      if (avgPricePerKg > 3) {
+        recommendations.push({
+          title: "Premium Pricing Opportunity",
+          description: `Your average price is ₹${avgPricePerKg.toFixed(2)}/kg. Market is favorable for premium pricing.`,
+          trend: "+20%",
+          positive: true,
+        });
+      }
+      
+      setAnalyticsData({
+        monthlyEarnings: months,
+        wasteBreakdown,
+        aiRecommendations: recommendations,
+        summaryStats: {
+          thisMonthEarnings,
+          totalSold,
+          ordersCount: orders.length,
+          avgOrderValue: parseFloat(avgOrderValue.toFixed(2))
+        }
+      });
+    };
+    
+    calculateAnalytics();
+  }, [orders, products]);
+  
+  if (loading.orders || loading.products) {
+    return (
+      <MobileLayout>
+        <AppHeader title="Analytics" />
+        <div className="flex items-center justify-center min-h-[70vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </MobileLayout>
+    );
+  }
+
+  if (error.orders || error.products) {
+    return (
+      <MobileLayout>
+        <AppHeader title="Analytics" />
+        <div className="px-4 py-4">
+          <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-center">
+            <p className="font-medium text-destructive">Error loading analytics</p>
+            <p className="text-sm text-destructive/80 mt-1">{error.orders || error.products}</p>
+            <button 
+              onClick={() => { refreshOrders(); refreshProducts(); }}
+              className="mt-3 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </MobileLayout>
+    );
+  }
+  
   return (
     <MobileLayout>
       <AppHeader title="Analytics" />
@@ -68,15 +233,15 @@ const Analytics = () => {
           <StatCard
             icon={<TrendingUp className="w-6 h-6" />}
             label="This Month"
-            value="₹28,400"
-            subtext="+15% vs last month"
+            value={`₹${analyticsData.summaryStats.thisMonthEarnings.toLocaleString()}`}
+            subtext={`${orders.length} orders this month`}
             variant="primary"
           />
           <StatCard
             icon={<BarChart3 className="w-6 h-6" />}
-            label="Total Sold"
-            value="45 Qtl"
-            subtext="Across 12 orders"
+            label="Avg. Order Value"
+            value={`₹${analyticsData.summaryStats.avgOrderValue.toLocaleString()}`}
+            subtext={`Across ${orders.length} orders`}
           />
         </div>
 
@@ -93,13 +258,15 @@ const Analytics = () => {
             </div>
             <div className="flex items-center gap-1 text-success text-sm font-medium">
               <TrendingUp className="w-4 h-4" />
-              +18%
+              {analyticsData.monthlyEarnings.length > 1 
+                ? `${Math.round(((analyticsData.monthlyEarnings[analyticsData.monthlyEarnings.length - 1].value - analyticsData.monthlyEarnings[0].value) / analyticsData.monthlyEarnings[0].value) * 100)}%`
+                : '0%'}
             </div>
           </div>
 
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={earningsData}>
+              <AreaChart data={analyticsData.monthlyEarnings}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                     <stop
@@ -151,11 +318,11 @@ const Analytics = () => {
         >
           <div className="flex items-center gap-2 mb-4">
             <PieChart className="w-5 h-5 text-primary" />
-            <h3 className="font-bold text-foreground">Waste-to-Profit</h3>
+            <h3 className="font-bold text-foreground">Waste Breakdown</h3>
           </div>
 
           <div className="space-y-3">
-            {wasteBreakdown.map((item, index) => (
+            {analyticsData.wasteBreakdown.map((item, index) => (
               <motion.div
                 key={item.type}
                 initial={{ opacity: 0, x: -20 }}
@@ -165,7 +332,7 @@ const Analytics = () => {
               >
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-foreground font-medium">{item.type}</span>
-                  <span className="text-muted-foreground">{item.percentage}%</span>
+                  <span className="text-muted-foreground">{item.percentage}% ({item.count})</span>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
                   <motion.div
@@ -188,49 +355,55 @@ const Analytics = () => {
           </div>
 
           <div className="space-y-3">
-            {aiRecommendations.map((rec, index) => (
-              <motion.div
-                key={rec.title}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 + index * 0.1 }}
-                className="bg-card rounded-xl p-4 border border-border flex items-start gap-3"
-              >
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold",
-                    rec.positive
-                      ? "bg-success/10 text-success"
-                      : "bg-destructive/10 text-destructive"
-                  )}
+            {analyticsData.aiRecommendations.length > 0 ? (
+              analyticsData.aiRecommendations.map((rec, index) => (
+                <motion.div
+                  key={rec.title}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + index * 0.1 }}
+                  className="bg-card rounded-xl p-4 border border-border flex items-start gap-3"
                 >
-                  {rec.positive ? (
-                    <TrendingUp className="w-5 h-5" />
-                  ) : (
-                    <TrendingDown className="w-5 h-5" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-foreground">{rec.title}</h4>
-                    <span
-                      className={cn(
-                        "text-xs font-bold px-2 py-1 rounded-full",
-                        rec.positive
-                          ? "bg-success/10 text-success"
-                          : "bg-destructive/10 text-destructive"
-                      )}
-                    >
-                      {rec.trend}
-                    </span>
+                  <div
+                    className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold",
+                      rec.positive
+                        ? "bg-success/10 text-success"
+                        : "bg-destructive/10 text-destructive"
+                    )}
+                  >
+                    {rec.positive ? (
+                      <TrendingUp className="w-5 h-5" />
+                    ) : (
+                      <TrendingDown className="w-5 h-5" />
+                    )}
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {rec.description}
-                  </p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground mt-2" />
-              </motion.div>
-            ))}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-foreground">{rec.title}</h4>
+                      <span
+                        className={cn(
+                          "text-xs font-bold px-2 py-1 rounded-full",
+                          rec.positive
+                            ? "bg-success/10 text-success"
+                            : "bg-destructive/10 text-destructive"
+                        )}
+                      >
+                        {rec.trend}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {rec.description}
+                    </p>
+                  </div>
+                  <ArrowRight className="w-5 h-5 text-muted-foreground mt-2" />
+                </motion.div>
+              ))
+            ) : (
+              <div className="bg-card rounded-xl p-4 border border-border text-center">
+                <p className="text-muted-foreground">No recommendations at the moment</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

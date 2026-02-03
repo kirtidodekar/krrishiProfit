@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Sparkles,
   Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import MobileLayout from "@/components/layout/MobileLayout";
 import AppHeader from "@/components/header/AppHeader";
@@ -15,35 +16,129 @@ import VoiceButton from "@/components/ui/voice-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useApp } from "../contexts/AppContext";
+import { useAuth } from "../contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
-const wasteTypes = [
-  { id: "crop", label: "Crop Residue", icon: "🌾", examples: "Rice straw, wheat stubble" },
-  { id: "animal", label: "Animal Waste", icon: "🐄", examples: "Cow dung, poultry litter" },
-  { id: "vegetable", label: "Vegetable Waste", icon: "🥬", examples: "Spoiled vegetables, peels" },
-  { id: "fruit", label: "Fruit Waste", icon: "🍎", examples: "Rotten fruits, seeds" },
+const wasteCategories = [
+  { id: "wheat-straw", label: "Wheat Straw", icon: "🌾", examples: "Wheat stubble, straw" },
+  { id: "rice-husk", label: "Rice Husk", icon: "🌾", examples: "Rice hulls, chaff" },
+  { id: "corn-stover", label: "Corn Stover", icon: "🌽", examples: "Corn stalks, leaves" },
+  { id: "sugarcane-bagasse", label: "Sugarcane Bagasse", icon: "🌱", examples: "Crushed sugarcane residue" },
+  { id: "cotton-stalks", label: "Cotton Stalks", icon: "🌿", examples: "Cotton plant residues" },
+  { id: "other", label: "Other Waste", icon: "🍃", examples: "Any other agricultural waste" },
 ];
 
 const AddWaste = () => {
   const [step, setStep] = useState(1);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [quantity, setQuantity] = useState("");
+  const [pricePerKg, setPricePerKg] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("Village Rampur, District Varanasi, UP");
   const [hasPhoto, setHasPhoto] = useState(false);
   const [showPricePrediction, setShowPricePrediction] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const { createProduct } = useApp();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const handlePhotoUpload = () => {
     setHasPhoto(true);
   };
 
   const handleGetPrice = () => {
+    // Simple price prediction based on waste type and quantity
+    const basePrices: Record<string, number> = {
+      "wheat-straw": 2.5,
+      "rice-husk": 1.8,
+      "corn-stover": 3.0,
+      "sugarcane-bagasse": 2.0,
+      "cotton-stalks": 2.2,
+      "other": 1.5,
+    };
+    
+    const basePrice = basePrices[selectedType || "other"] || 2.0;
+    const predictedPrice = {
+      min: parseFloat((basePrice * 0.8).toFixed(2)),
+      max: parseFloat((basePrice * 1.2).toFixed(2)),
+      recommended: parseFloat(basePrice.toFixed(2)),
+      trend: "+5%",
+    };
+    
+    setPricePerKg(predictedPrice.recommended.toString());
     setShowPricePrediction(true);
+    return predictedPrice;
   };
 
-  const predictedPrice = {
-    min: 1800,
-    max: 2400,
-    recommended: 2100,
-    trend: "+8%",
+  const handleSubmitListing = async () => {
+    if (!user) {
+      setSubmissionError("You must be logged in to create a listing");
+      return;
+    }
+    
+    if (!selectedType || !quantity || !pricePerKg || !description || !location) {
+      setSubmissionError("Please fill in all required fields");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    
+    try {
+      const productData = {
+        name: wasteCategories.find(c => c.id === selectedType)?.label || "Agricultural Waste",
+        category: selectedType as any,
+        quantity: parseInt(quantity) * 100, // Convert quintals to kg
+        pricePerKg: parseFloat(pricePerKg),
+        unit: 'kg' as const, // Use 'as const' to make it a literal type
+        location,
+        description,
+        available: true,
+      };
+      
+      await createProduct(productData);
+      
+      // Reset form and navigate
+      setStep(1);
+      setSelectedType(null);
+      setQuantity("");
+      setPricePerKg("");
+      setDescription("");
+      setHasPhoto(false);
+      setShowPricePrediction(false);
+      
+      navigate("/home");
+    } catch (error) {
+      console.error("Error creating product:", error);
+      setSubmissionError(error instanceof Error ? error.message : "Failed to create listing");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  // Calculate predicted price for display
+  const calculatePredictedPrice = () => {
+    const basePrices: Record<string, number> = {
+      "wheat-straw": 2.5,
+      "rice-husk": 1.8,
+      "corn-stover": 3.0,
+      "sugarcane-bagasse": 2.0,
+      "cotton-stalks": 2.2,
+      "other": 1.5,
+    };
+    
+    const basePrice = basePrices[selectedType || "other"] || 2.0;
+    return {
+      min: parseFloat((basePrice * 0.8).toFixed(2)),
+      max: parseFloat((basePrice * 1.2).toFixed(2)),
+      recommended: parseFloat(basePrice.toFixed(2)),
+      trend: "+5%",
+    };
+  };
+
+  const predictedPrice = calculatePredictedPrice();
 
   return (
     <MobileLayout>
@@ -172,7 +267,7 @@ const AddWaste = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {wasteTypes.map((type) => (
+                {wasteCategories.map((type) => (
                   <motion.button
                     key={type.id}
                     whileHover={{ scale: 1.02 }}
@@ -253,6 +348,37 @@ const AddWaste = () => {
 
                 <div>
                   <label className="text-sm font-medium text-foreground mb-2 block">
+                    Price per kg (₹)
+                  </label>
+                  <div className="flex gap-3 items-center">
+                    <Input
+                      type="number"
+                      placeholder="Enter price per kg"
+                      value={pricePerKg}
+                      onChange={(e) => setPricePerKg(e.target.value)}
+                      className="flex-1 h-14 rounded-xl text-lg"
+                    />
+                    <VoiceButton
+                      onVoiceInput={(text) => setPricePerKg(text)}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">
+                    Description
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Describe your waste (quality, condition, etc.)"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="h-14 rounded-xl text-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-2 block">
                     Pickup Location
                   </label>
                   <motion.button
@@ -266,7 +392,7 @@ const AddWaste = () => {
                     <div className="flex-1 text-left">
                       <p className="font-semibold text-foreground">Auto-detected</p>
                       <p className="text-sm text-muted-foreground">
-                        Village Rampur, District Varanasi
+                        {location}
                       </p>
                     </div>
                     <Check className="w-5 h-5 text-success" />
@@ -290,7 +416,7 @@ const AddWaste = () => {
                     setStep(4);
                     handleGetPrice();
                   }}
-                  disabled={!quantity}
+                  disabled={!quantity || !pricePerKg || !description}
                 >
                   Get AI Price
                   <Sparkles className="w-5 h-5 ml-2" />
@@ -329,7 +455,7 @@ const AddWaste = () => {
                   </p>
                   <p className="text-4xl font-bold text-primary-foreground mb-2">
                     ₹{predictedPrice.recommended}
-                    <span className="text-lg font-normal opacity-80">/quintal</span>
+                    <span className="text-lg font-normal opacity-80">/kg</span>
                   </p>
                   <div className="flex items-center justify-center gap-2 text-sm">
                     <span className="opacity-80">Market range:</span>
@@ -349,20 +475,30 @@ const AddWaste = () => {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Waste Type</span>
                   <span className="font-medium">
-                    {wasteTypes.find((t) => t.id === selectedType)?.label}
+                    {wasteCategories.find((t) => t.id === selectedType)?.label}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Quantity</span>
-                  <span className="font-medium">{quantity} quintals</span>
+                  <span className="font-medium">{quantity} quintals ({parseInt(quantity) * 100} kg)</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Price/kg</span>
+                  <span className="font-medium">₹{pricePerKg}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Est. Total Value</span>
                   <span className="font-bold text-primary">
-                    ₹{(Number(quantity) * predictedPrice.recommended).toLocaleString()}
+                    ₹{(parseInt(quantity) * 100 * parseFloat(pricePerKg || "0")).toLocaleString()}
                   </span>
                 </div>
               </div>
+
+              {submissionError && (
+                <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3 text-center">
+                  <p className="text-sm text-destructive">{submissionError}</p>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <Button
@@ -376,9 +512,20 @@ const AddWaste = () => {
                 <Button
                   size="lg"
                   className="flex-1 rounded-xl h-14 bg-gradient-success"
+                  onClick={handleSubmitListing}
+                  disabled={isSubmitting}
                 >
-                  <Upload className="w-5 h-5 mr-2" />
-                  List for Sale
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Listing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5 mr-2" />
+                      List for Sale
+                    </>
+                  )}
                 </Button>
               </div>
             </motion.div>
